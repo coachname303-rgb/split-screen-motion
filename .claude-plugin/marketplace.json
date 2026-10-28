@@ -1,0 +1,11 @@
+{
+  "name": "split-screen-motion",
+  "owner": { "name": "coach.sriravich" },
+  "plugins": [
+    {
+      "name": "split-screen-motion",
+      "source": "./",
+      "description": "Top-half motion graphics for split-screen shorts, synced to speech."
+    }
+  ]
+}

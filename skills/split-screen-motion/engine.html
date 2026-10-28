@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>Split Motion</title>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700;800&display=block" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 960px; overflow: hidden; background: var(--bg); }
+  body { font-family: Prompt, sans-serif; color: var(--ink); }
+  #stage { position: relative; width: 1080px; height: 960px; overflow: hidden; }
+  /* bottom 110px is left empty for the user's own subtitles */
+  .frame { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 44px; padding: 70px 70px 110px; }
+  .frame.row { flex-direction: row; gap: 64px; }
+
+  .h { font-size: 74px; font-weight: 800; line-height: 1.15; text-align: center; letter-spacing: -.5px; }
+  .h.left { text-align: left; }
+  .h.sm { font-size: 62px; }
+  .k { font-size: 40px; font-weight: 600; color: var(--muted); }
+  .hl { color: var(--accent); }
+  .ok { color: var(--good); }
+  .muted { color: var(--muted); }
+  .card { background: var(--card); border-radius: 36px; box-shadow: 0 18px 44px rgba(11, 37, 69, .10); }
+  .chip { display: inline-flex; align-items: center; gap: 12px; padding: 12px 26px; border-radius: 999px; font-size: 34px; font-weight: 600; }
+  .chip.good { background: var(--good-soft); color: var(--good); }
+  .chip.accent { background: var(--accent-soft); color: var(--accent); }
+  .chip.dark { background: var(--ink); color: #fff; }
+  .side { display: flex; flex-direction: column; gap: 22px; width: 430px; }
+  .row-c { display: flex; align-items: center; gap: 18px; }
+  svg { display: block; flex: none; }
+
+  /* phone mockup: 400x740 outer; keep each row's content under ~320px wide */
+  .phone { width: 400px; height: 740px; border-radius: 62px; background: var(--ink); padding: 16px; flex: none; position: relative; }
+  .screen { width: 100%; height: 100%; border-radius: 48px; background: #fff; overflow: hidden; position: relative; }
+  .screen.dark { background: var(--dark); }
+  .notch { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); width: 110px; height: 30px; border-radius: 16px; background: var(--ink); z-index: 2; }
+
+  /* switch: add data-a="toggle" to flip it from on to off at data-t */
+  .tg { --p: 0; width: 92px; height: 54px; border-radius: 27px; position: relative; flex: none;
+        background: color-mix(in srgb, var(--off) calc(var(--p) * 100%), var(--good)); }
+  .tg::after { content: ""; position: absolute; top: 6px; left: calc(44px - 38px * var(--p)); width: 42px; height: 42px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.18); }
+  .tg.off { --p: 1; }
+
+  .ban { position: absolute; width: 96px; height: 96px; border-radius: 50%; background: var(--red); display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 24px rgba(242, 95, 92, .35); }
+  .badge { width: 130px; height: 130px; border-radius: 36px; background: var(--accent); display: flex; align-items: center; justify-content: center; box-shadow: 0 12px 28px rgba(11, 37, 69, .25); }
+  .bar { height: 64px; border-radius: 18px; background: var(--panel); overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 18px; background: var(--good); }
+  .swap { position: relative; display: inline-grid; }
+  .swap > * { grid-area: 1 / 1; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="lucide.js"></script>
+<script>
+// ---------- theme ----------
+const THEMES = {
+  blue: { bg: '#F2F6FB', ink: '#0B2545', muted: '#7A8BA3', line: '#DCE6F2', card: '#FFFFFF', panel: '#EAF0F7', dark: '#13304F',
+          accent: '#1864AB', 'accent-soft': '#DCEBFA', good: '#0CA5B0', 'good-soft': '#D5F3F5', red: '#F25F5C', off: '#CBD6E4',
+          'grad-a': '#1864AB', 'grad-b': '#0B2545' },
+  sky:  { bg: '#EEF7FF', ink: '#0B2545', muted: '#6F8BA8', line: '#D3E7FA', card: '#FFFFFF', panel: '#EAF3FC', dark: '#13304F',
+          accent: '#1C8CE8', 'accent-soft': '#D6ECFF', good: '#15AABF', 'good-soft': '#D3F4F8', red: '#F25F5C', off: '#CBD6E4',
+          'grad-a': '#4DABF7', 'grad-b': '#1971C2' },
+};
+
+// line icon from lucide: I('lock', 48, 'var(--accent)', 2)
+window.I = (name, size = 48, color = 'currentColor', sw = 2) => {
+  if (!window.LUCIDE[name]) throw new Error('unknown icon: ' + name);
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${window.LUCIDE[name]}</svg>`;
+};
+
+// ---------- animation ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const out = p => 1 - Math.pow(1 - p, 3);
+const inOut = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const back = p => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); };
+
+// each effect returns the animated part of the transform (the element's own inline transform is kept)
+const EFFECTS = {
+  pop:    { d: .45, run: (el, p) => { el.style.opacity = clamp(p * 2.5); return `translateY(${lerp(40, 0, out(p))}px) scale(${lerp(.6, 1, back(p))})`; } },
+  rise:   { d: .5,  run: (el, p) => { el.style.opacity = clamp(p * 2); return `translateY(${lerp(50, 0, out(p))}px)`; } },
+  fade:   { d: .4,  run: (el, p) => { el.style.opacity = p; return ''; } },
+  stamp:  { d: .25, run: (el, p) => { el.style.opacity = p > 0 ? 1 : 0; return `scale(${lerp(2.4, 1, out(p))})`; } },
+  slide:  { d: .55, run: (el, p) => { el.style.opacity = clamp(p * 2); return `translateX(${lerp(-80, 0, out(p))}px)`; } },
+  grow:   { d: .8,  run: (el, p) => { el.style.transformOrigin = 'left center'; return `scaleX(${out(p)})`; } },
+  wipe:   { d: .6,  run: (el, p) => { el.style.clipPath = `inset(-20% ${100 - out(p) * 100}% -20% 0)`; return ''; } },
+  toggle: { d: .3,  run: (el, p) => { el.style.setProperty('--p', inOut(p)); return ''; } },
+  swap:   { d: .35, run: (el, p) => { el.children[0].style.opacity = 1 - p; el.children[1].style.opacity = p; return ''; } },
+  count:  { d: 1.0, run: (el, p) => {
+    const from = +(el.dataset.from || 0), to = +el.dataset.to, v = Math.round(lerp(from, to, out(p)));
+    el.textContent = (el.dataset.pre || '') + v.toLocaleString('en-US') + (el.dataset.suf || '');
+    return '';
+  } },
+};
+const IDLE = {
+  bob: t => `translateY(${Math.sin(t * 2.2) * 6}px)`,
+  pulse: t => `scale(${1 + Math.sin(t * 3) * .03})`,
+  tilt: t => `rotate(${Math.sin(t * 1.8) * 3}deg)`,
+};
+
+const EXIT = .22;
+let FRAMES = [];
+window.DURATION = 0;
+
+function build(data) {
+  const theme = { ...THEMES[data.theme || 'blue'], ...(data.colors || {}) };
+  for (const [k, v] of Object.entries(theme)) document.documentElement.style.setProperty('--' + k, v);
+  const stage = document.getElementById('stage');
+  FRAMES = data.frames.map((f, i) => {
+    const el = document.createElement('section');
+    el.className = 'frame' + (f.row ? ' row' : '');
+    el.innerHTML = f.html;
+    stage.appendChild(el);
+    // data-t: absolute seconds, or "+0.4" = seconds after the frame starts (default +0)
+    const anims = [...el.querySelectorAll('[data-a]')].map(a => {
+      const raw = a.dataset.t || '+0';
+      const t = raw.startsWith('+') ? f.start + parseFloat(raw.slice(1)) : parseFloat(raw);
+      const fx = EFFECTS[a.dataset.a];
+      if (!fx) throw new Error(`frame ${i + 1}: unknown data-a="${a.dataset.a}"`);
+      if (t < f.start - .001 || t >= f.end) console.warn(`frame ${i + 1}: data-t ${t} is outside ${f.start}-${f.end}`);
+      return { el: a, t, d: +(a.dataset.d || fx.d), fx, base: a.style.transform || '', idle: IDLE[a.dataset.idle] };
+    });
+    return { ...f, el, anims };
+  });
+  window.DURATION = data.duration ?? Math.max(...data.frames.map(f => f.end));
+}
+
+window.seek = t => {
+  for (const f of FRAMES) {
+    const vis = t >= f.start && t < f.end;
+    f.el.style.display = vis ? 'flex' : 'none';
+    if (!vis) continue;
+    for (const a of f.anims) {
+      const p = clamp((t - a.t) / a.d);
+      const move = a.fx.run(a.el, p, t);
+      const idle = a.idle && p >= 1 ? a.idle(t - a.t) : '';
+      a.el.style.transform = `${a.base} ${move} ${idle}`.trim();
+    }
+    const po = inOut(clamp((t - (f.end - EXIT)) / EXIT));
+    f.el.style.opacity = Math.min(clamp((t - f.start) / .12), 1 - po);
+    f.el.style.transform = `translateY(${-po * 30}px)`;
+  }
+};
+
+const params = new URLSearchParams(location.search);
+window.ready = new Promise((resolve, reject) => {
+  const sc = document.createElement('script');
+  sc.src = params.get('frames') || 'frames.js';
+  sc.onerror = () => reject(new Error('cannot load frames: ' + sc.src));
+  sc.onload = async () => {
+    try {
+      build(window.SPLIT);
+      // frames start hidden, so the browser would fetch each weight/subset only when a frame first shows
+      // (and draw that text invisible meanwhile). Load every weight with the real text up front.
+      const sample = document.getElementById('stage').textContent;
+      await Promise.all([400, 500, 600, 700, 800].map(w => document.fonts.load(`${w} 50px Prompt`, sample)));
+      await document.fonts.ready;
+      window.seek(0);
+      resolve();
+    } catch (e) { reject(e); }
+  };
+  document.head.appendChild(sc);
+});
+
+if (!params.has('render')) {
+  window.ready.then(() => {
+    const t0 = performance.now(), start = +(params.get('t') || 0);
+    const loop = now => { window.seek((start + (now - t0) / 1000) % window.DURATION); requestAnimationFrame(loop); };
+    requestAnimationFrame(loop);
+  });
+}
+</script>
+</body>
+</html>

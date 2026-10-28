@@ -1,0 +1,9 @@
+{
+  "name": "split-screen-motion",
+  "version": "1.0.0",
+  "description": "Top-half motion graphics for split-screen shorts (Reels/TikTok/Shorts), synced word-by-word to a talking-head video. Built for Thai, works with any language Whisper knows.",
+  "author": { "name": "coach.sriravich" },
+  "repository": "https://github.com/coachname303-rgb/split-screen-motion",
+  "license": "MIT",
+  "keywords": ["video", "motion-graphics", "split-screen", "reels", "tiktok", "thai", "whisper"]
+}
